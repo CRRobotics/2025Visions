@@ -20,22 +20,7 @@ FOV_HEIGHT_DEGREES = 41
 FOV_HEIGHT_PIX = 240
 FOV_WIDTH_DEGREES = 54
 FOV_WIDTH_PIX = 320
-BUMPER_HEIGHT_PIX = 20
-
-NOTE_OUTER_RADIUS_IN = 14
-NOTE_THICKNESS_IN = 2
-
-X_ERROR_M = 0.96
-X_ERROR_B = 0.69
-Z_ERROR_M = 0.92
-Z_ERROR_B = 8.06
-
-ACCEPTED_ERROR_A = 0.02675
-ACCEPTED_ERROR_B = 0.0894167
-ACCEPTED_ERROR_C = -2.72321
-ACCEPTED_ERROR_D_MIN = -0.7
-ACCEPTED_ERROR_D_MAX = 0.4
-
+BUMPER_HEIGHT_PIX = 20 
 
 # HELPER FUNCTIONS
 
@@ -91,18 +76,23 @@ def verticalOpticalToGround(opticalHorizontalAngle, opticalVerticalAngle):
     return math.asin(math.cos(math.radians(CAMERA_CENTER_ANGLE_DEGREES)) * math.sin(opticalVerticalAngle) + \
         math.cos(opticalHorizontalAngle) * math.cos(opticalVerticalAngle) * math.sin(math.radians(CAMERA_CENTER_ANGLE_DEGREES)))
 
+def drawOnImage(toDisplay, convexHulls, textToDisplay, centers):
+    toDisplay = cv2.drawContours(toDisplay, convexHulls, -1, (0, 0, 255), 2)
+    for i in range(len(centers)):
+        toDisplay = cv2.putText(toDisplay, str(textToDisplay[i]), centers[i], cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        toDisplay = cv2.circle(toDisplay, centers[i], 5, (0, 0, 255), 2)
+   
+    return toDisplay
+
 def processImage(image):
     """The main image processing function, returns the image with things drawn on it, the mask, and the X and Z coorinates of notes found."""
-    convexHull, mask = findNoteContours(image)
-    ellipses, convexHull = fitEllipsesToNotes(convexHull)
-    centers = [ellipse[0] for ellipse in ellipses]
-    distances2, groundAngles = computeNoteCoordsFromCenters(centers, image)
-    convexHull, distances2, groundAngles, ellipses = closestNote(convexHull, distances2, groundAngles, ellipses)
+    convexHulls, mask, centers = findAlgae(image)
+    distances2, groundAngles = computeAlgaeCoordsFromCenters(centers, image)
+    #convexHulls, distances2, groundAngles, ellipses = closestAlgae(convexHulls, distances2, groundAngles, ellipses)
     xCoords, zCoords = polarToRectangular(distances2, groundAngles)
 
-    displayText = [str(round(xCoords[i], 1)) + ", " + str(round(zCoords[i], 1)) for i in range(len(ellipses))] # X coord, Z coord
-    toDisplay = drawEllipses(ellipses, displayText, image)
-    toDisplay = cv2.drawContours(toDisplay, convexHull, -1, (0, 0, 255), 2)
+    displayText = [str(round(xCoords[i], 1)) + ", " + str(round(zCoords[i], 1)) for i in range(len(centers))] # X coord, Z coord
+    toDisplay = drawOnImage(toDisplay, convexHulls, displayText, centers)
 
     # If xCoords and zCoords are empty, 0 will be pushed to NetworkTables for both
     xCoords.append(0)
@@ -123,7 +113,7 @@ def invertedHueMask(image):
     mask2 = cv2.inRange(image, lower2, upper2)
     return cv2.bitwise_or(mask1, mask2)
 
-def findNoteContours(image):
+def findAlgae(image):
     """Filters the image for notes and returns a list of convexHulls where they are, plus the mask."""
     image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     blurred = cv2.medianBlur(image, BLUR_SIZE * 2 + 1)
@@ -132,48 +122,15 @@ def findNoteContours(image):
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return [], mask
-    convexHull = [cv2.convexHull(contour) for contour in contours]
-    return convexHull, mask
-
-def fitEllipsesToNotes(convexHull):
-    """Given a list of contours, finds ellipses that represent the center circles of notes, also returns the contours that could have ellipses fit to them."""
-    ellipses = []
-    passedHulls = []
-    for hull in convexHull:
-        if len(hull) < 5: continue # fitEllipse needs at least 5 points
-
-        ellipse = cv2.fitEllipse(hull)
-        newMajor = ellipse[1][1] * (1 - NOTE_THICKNESS_IN / NOTE_OUTER_RADIUS_IN) # Shrink the ellipse to be at roughly the center of the torus
-        newMinor = ellipse[1][0] - ellipse[1][1] * NOTE_THICKNESS_IN / NOTE_OUTER_RADIUS_IN # Removing the same amount from the minor axis as the major axis
-        ellipse = list(ellipse) # Tuples must be converted to lists to edit their contents
-        ellipse[1] = (newMinor, newMajor)
-        ellipse = tuple(ellipse)
-
-        ellipses.append(ellipse)
-        passedHulls.append(hull)
-    return ellipses, passedHulls
-
-def drawEllipses(ellipses, textToDisplay, image):
-    """Displays the inputted array of ellipses on image with textToDisplay (an array of the same length) at their centers."""
-    toReturn = image.copy()
-    for i in range(len(ellipses)):
-        ellipse = ellipses[i]
-        text = textToDisplay[i]
-
-        try:
-            ellipseCenter = tuple([int(coord) for coord in ellipse[0]])
-            toReturn = cv2.circle(toReturn, ellipseCenter, 0, (0, 0, 0), 5)
-            toReturn = cv2.ellipse(toReturn, ellipse, (255, 255, 0), 2)
-            toReturn = cv2.putText(toReturn, str(text), ellipseCenter, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-        except:
-            # Errors this catches: ellipse has infinity in it, ellipse is zero size, center doesn't work for text
-            print("Can't display ellipse")
-    return toReturn
+    convexHulls = [cv2.convexHull(contour) for contour in contours]
+    momentses = [cv2.moments(convexHull) for convexHull in convexHulls]
+    centers = [(moments[int(moments['m10']/moments['m00'])], moments[int(moments['m01']/moments['m00'])]) for moments in momentses]
+    return convexHulls, mask, centers
 
 
 # POS MATH
 
-def computeNoteCoordsFromCenters(centers, image):
+def computeAlgaeCoordsFromCenters(centers, image):
     """Uses the center point of a note to calculate its z-coordinate based on the tilt of the camera, assuming it is on the floor and the center point is below the camera."""
     distances = []
     angles = []
@@ -191,22 +148,7 @@ def computeNoteCoordsFromCenters(centers, image):
         angles.append(groundHorizontalAngle)
     return distances, angles
 
-def undoError(givenXs, givenZs):
-    """Uses the given X and Z and the error of the given X and Z, adjusts for the error of the functions. We're too good for this, though ;)."""
-    adjustedXs = []
-    adjustedZs = []
-    for i in range(len(givenXs)):
-        givenX = givenXs[i]
-        givenZ = givenZs[i]
-
-        adjustedX = (givenX - X_ERROR_B) / X_ERROR_M
-        adjustedZ = (givenZ - Z_ERROR_B) / Z_ERROR_M
-
-        adjustedXs.append(adjustedX)
-        adjustedZs.append(adjustedZ)
-    return adjustedXs, adjustedZs
-
-def closestNote(contours, distances, angles, ellipses):
+def closestAlgae(contours, distances, angles, ellipses):
     """Finds the closest and biggest contour."""
     if len(ellipses) == 0:
         return [], [], [], []
