@@ -55,8 +55,8 @@ def processImage(image):
     try:
         convexHull, distances2, groundAngles, pixelCenter, contour = closestAlgae(convexHulls, distances2, groundAngles, pixelCenters, contours)
         toDisplay = cv2.drawContours(toDisplay, contour, -1, (0, 0, 255), 2)
-        toDisplay = cv2.putText(toDisplay, "distance " + str(distances2), (5,435), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 2)
-        toDisplay = cv2.putText(toDisplay, "angle (radians) " + str(groundAngles), (5,460), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 2)
+        toDisplay = cv2.putText(toDisplay, "distance " + str(distances2), (5,430), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2)
+        toDisplay = cv2.putText(toDisplay, "angle (radians) " + str(groundAngles), (5,460), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2)
         toDisplay = cv2.circle(toDisplay, (pixelCenter), 0, (0, 0, 0), 10)
         toDisplay = cv2.drawContours(toDisplay, convexHulls, -1, (0, 0, 255), 2)
         toDisplay = cv2.drawContours(toDisplay, convexHull, -1, (0, 255, 0), 5)
@@ -152,6 +152,7 @@ def getOpticalAngle(img, orientation:int, coordinate:tuple):
 
 def getHorizontalDistance(angle, degrees=False, heightToTarget=CAMERA_HEIGHT_IN + DISTANCE_FROM_OBJECT_CENTER_TO_GROUND):
     """Determines the horizontal distance to the target based on the angle and height of the target relative to the robot. From 2022."""
+    if angle == 0: return 0 # This happens when the object is in the same horizontal plane as the camera to prevent zero division
     return heightToTarget / math.tan(math.radians(angle)) if degrees else heightToTarget / math.tan(angle)
 
 def horizontalOpticalToGround(angle):
