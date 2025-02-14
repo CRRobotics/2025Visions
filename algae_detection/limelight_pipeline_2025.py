@@ -8,14 +8,13 @@ assumption that the object is on the ground.
 
 Program Flaws:
 - Often struglles to differientiate between bumpers, depending on the color (ai might be better)
-- Currently assuming the center of mass is on the ground instead of the bottom of the algae.
+- Gets extremely inaccurate if the angle between the center of the object and the center of the camera's view is small
+- Gets slightly inaccurate the further to the edge of the FOV
 
-Potential Improvements
+Potential Improvements:
 - Make all variables must be a certain type in functions
-
-Assumptions:
-- Object is on the ground
-- 
+- If angle between center of object and center of camera's view is too small, find the distance to another point 
+- If angle between center of object and center of camera's view is too small, use a different method to calculate distance
 """
 
 import cv2
@@ -24,45 +23,45 @@ import math
 
 # CONSTANTS
 
-MAX_HUE = 179 #The maximum value hue can be. It's 180 because hue is measured it degrees. Used for invertedHueMask
+MAX_HUE = 179 #Used for invertedHueMask
 
 BLUR_SIZE = 4 #Used for color colorMask
 
-UPPER = np.array([150, 255, 255]) #The upper and lower HSV bounds for what color the object is. Used for color filter
-LOWER = np.array([50, 188, 50])
+UPPER = np.array([150, 255, 255]) #Used for color filter
+LOWER = np.array([50, 120, 50])
 
-CAMERA_CENTER_ANGLE_DEGREES = -29 #Used in pose estimation
-CAMERA_HEIGHT_IN = -8.5
-DISTANCE_FROM_OBJECT_CENTER_TO_GROUND = 8
+CAMERA_CENTER_ANGLE_DEGREES = 0 #Used in pose estimation
+DISTANCE_FROM_CAMERA_CENTER_TO_OBJECT_CENTER = -.7 + 8
 
 FOV_HEIGHT_DEGREES = 41 #Used in pose estimation
-FOV_HEIGHT_PIX = 240
+FOV_HEIGHT_PIX = 480
 FOV_WIDTH_DEGREES = 54
-FOV_WIDTH_PIX = 320
+FOV_WIDTH_PIX = 640
 
-X_ERROR_M = 0.96 #Used in undoError, mostly unnecessary
-X_ERROR_B = 0.69
-Z_ERROR_M = 0.92
-Z_ERROR_B = 8.06
+X_ERROR_M = 0 #Used in undoError, mostly unnecessary
+X_ERROR_B = 0
+Z_ERROR_M = 0
+Z_ERROR_B = 0
 
 # PRIMARY FUNCTIONS
 
 def processImage(image):
     """The main image processing function, returns the image with things drawn on it, the colorMask, and the X and Z coorinates of notes found."""
     toDisplay = image
-    pixelCenters, convexHulls, colorMask, contours = findAlgae(toDisplay)
-    distances2, groundAngles = computeAlgaeCoordsFromPixelCenters(pixelCenters, toDisplay)
+    pixelCenters, convexHulls, colorMask, contours = findObject(toDisplay)
+    distances2, groundAngles = computeObjectCoordsFromPixelCenters(pixelCenters, toDisplay)
     try:
-        convexHull, distances2, groundAngles, pixelCenter, contour = closestAlgae(convexHulls, distances2, groundAngles, pixelCenters, contours)
-        toDisplay = cv2.drawContours(toDisplay, contour, -1, (0, 0, 255), 2)
-        toDisplay = cv2.putText(toDisplay, "distance " + str(distances2), (5,435), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 2)
-        toDisplay = cv2.putText(toDisplay, "angle (radians) " + str(groundAngles), (5,460), cv2.FONT_HERSHEY_SIMPLEX, .5, (255, 255, 255), 2)
-        toDisplay = cv2.circle(toDisplay, (pixelCenter), 0, (0, 0, 0), 10)
-        toDisplay = cv2.drawContours(toDisplay, convexHulls, -1, (0, 0, 255), 2)
-        toDisplay = cv2.drawContours(toDisplay, convexHull, -1, (0, 255, 0), 5)
-        #print("algae present") #used during testing
+        convexHull, distances2, groundAngles, pixelCenter, contour = closestObject(convexHulls, distances2, groundAngles, pixelCenters, contours)
+        displayAngles = [math.degrees(groundAngle) - 90 for groundAngle in groundAngles]
+        if len(displayAngles) > 0:
+            toDisplay = cv2.drawContours(toDisplay, contour, -1, (0, 0, 255), 2)
+            toDisplay = cv2.putText(toDisplay, "distance " + str(distances2), (5,420), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2)
+            toDisplay = cv2.putText(toDisplay, "angle (deg) %.2f" % (displayAngles[0]), (5,460), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2)
+            toDisplay = cv2.circle(toDisplay, (pixelCenter), 0, (255, 255, 255), 10)
+            toDisplay = cv2.drawContours(toDisplay, convexHulls, -1, (0, 0, 255), 2)
+            toDisplay = cv2.drawContours(toDisplay, convexHull, -1, (0, 255, 0), 5)
     except:
-        #print("no algae present") #used during testing
+        print("no Object present")
         pass
     xCoords, zCoords = polarToRectangular(distances2, groundAngles)
 
@@ -72,7 +71,7 @@ def processImage(image):
 
     return toDisplay, colorMask, xCoords, zCoords
 
-def findAlgae(image):
+def findObject(image):
     """finds the pixelCenters of the contours of the image and returns the contours and the images that pass"""
     image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     blurred = cv2.medianBlur(image, BLUR_SIZE * 2 + 1)
@@ -99,11 +98,12 @@ def findAlgae(image):
 
 # POS MATH
 
-def computeAlgaeCoordsFromPixelCenters(pixelCenters, image):
+def computeObjectCoordsFromPixelCenters(pixelCenters, image):
     """Uses the pixelCenter point of a note to calculate its z-coordinate based on the tilt of the camera, assuming it is on the floor and the center point is below the camera."""
     distances = []
     angles = []
     for vertex in pixelCenters:
+        # Some code from 2022
         opticalHorizontalAngle = getOpticalAngle(image, 0, vertex) # if vertex is not None else getOpticalAngle(image, 0, pixelCenters[0])
         groundHorizontalAngle = horizontalOpticalToGround(opticalHorizontalAngle)
         opticalVerticalAngle = getOpticalAngle(image, 1, vertex) # if vertex is not None else getOpticalAngle(image, 1, pixelCenters[0])
@@ -116,7 +116,7 @@ def computeAlgaeCoordsFromPixelCenters(pixelCenters, image):
         angles.append(groundHorizontalAngle)
     return distances, angles
 
-def closestAlgae(convexHulls, distances, angles, pixelCenters, contours):
+def closestObject(convexHulls, distances, angles, pixelCenters, contours):
     """Finds the biggest contour and returns it, the polar coordinates of it in relation to the camera, and the pixel_pixelCenter of it."""
     maxNote = 0
     maxIndex = -1
@@ -150,8 +150,9 @@ def getOpticalAngle(img, orientation:int, coordinate:tuple):
         angle = radiansPerPixelHeight * distanceFromCenter
     return angle
 
-def getHorizontalDistance(angle, degrees=False, heightToTarget=CAMERA_HEIGHT_IN + DISTANCE_FROM_OBJECT_CENTER_TO_GROUND):
+def getHorizontalDistance(angle, degrees=False, heightToTarget=DISTANCE_FROM_CAMERA_CENTER_TO_OBJECT_CENTER):
     """Determines the horizontal distance to the target based on the angle and height of the target relative to the robot. From 2022."""
+    if angle == 0: return 0
     return heightToTarget / math.tan(math.radians(angle)) if degrees else heightToTarget / math.tan(angle)
 
 def horizontalOpticalToGround(angle):
@@ -210,6 +211,7 @@ def undoError(givenXs, givenZs):
 
 def runPipeline(image, llrobot):
     #Main method, the method that the Limelight runs
+    image = cv2.flip(image, -1)
     toDisplay, colorMask, xCoords, zCoords = processImage(image)
     colorMask = cv2.cvtColor(colorMask, cv2.COLOR_GRAY2BGR)
 
