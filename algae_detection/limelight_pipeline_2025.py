@@ -152,7 +152,6 @@ def getOpticalAngle(img, orientation:int, coordinate:tuple):
 
 def getHorizontalDistance(angle, degrees=False, heightToTarget=DISTANCE_FROM_CAMERA_CENTER_TO_OBJECT_CENTER):
     """Determines the horizontal distance to the target based on the angle and height of the target relative to the robot. From 2022."""
-    if angle == 0: return 0
     return heightToTarget / math.tan(math.radians(angle)) if degrees else heightToTarget / math.tan(angle)
 
 def horizontalOpticalToGround(angle):
