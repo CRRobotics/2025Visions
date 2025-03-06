@@ -67,7 +67,7 @@ def processImage(image):
 
     return toDisplay, mask, xCoords, zCoords
 
-# IMAGE READING STUFF
+# IMAGE OBJECT STUFF
 
 def findObjectContours(image):
     """Filters the image for objects and returns a list of convexHulls where they are, plus the mask."""
