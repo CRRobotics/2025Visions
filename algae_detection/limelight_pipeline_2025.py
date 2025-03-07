@@ -55,13 +55,15 @@ def processImage(image):
         displayAngles = [math.degrees(groundAngle) - 90 for groundAngle in groundAngles]
         if len(displayAngles) > 0:
             toDisplay = cv2.drawContours(toDisplay, contour, -1, (0, 0, 255), 2)
-            toDisplay = cv2.putText(toDisplay, "distance " + str(distances2), (5,420), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2)
+            toDisplay = cv2.putText(toDisplay, "distance " + str(round(distances2[0], 2)), (5,420), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 7)
+            toDisplay = cv2.putText(toDisplay, "angle (deg) %.2f" % (displayAngles[0]), (5,460), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 7)
+            toDisplay = cv2.putText(toDisplay, "distance " + str(round(distances2[0], 2)), (5,420), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2)
             toDisplay = cv2.putText(toDisplay, "angle (deg) %.2f" % (displayAngles[0]), (5,460), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2)
             toDisplay = cv2.circle(toDisplay, (pixelCenter), 0, (255, 255, 255), 10)
             toDisplay = cv2.drawContours(toDisplay, convexHulls, -1, (0, 0, 255), 2)
             toDisplay = cv2.drawContours(toDisplay, convexHull, -1, (0, 255, 0), 5)
     except:
-        print("no Object present")
+        #print("no Object present")
         pass
     xCoords, zCoords = polarToRectangular(distances2, groundAngles)
 
